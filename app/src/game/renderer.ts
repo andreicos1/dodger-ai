@@ -1,15 +1,15 @@
 import type { GameState } from "@shared/core";
 import { Application, Graphics, Text, Sprite, Texture } from "pixi.js";
-
-const BACKGROUND_COLOR = "#001524";
-const PLAYER_COLOR = "#00ff00";
-const BLOCK_COLOR = "#ff0000";
-const SCORE_TEXT_COLOR = "#FFECD1";
-const GAME_OVER_TEXT_COLOR = "#ff0000";
-
-const PLAYER_WIDTH = 60;
-const PLAYER_HEIGHT = 20;
-const BLOCK_SIZE = 30;
+import {
+  BACKGROUND_COLOR,
+  PLAYER_WIDTH,
+  PLAYER_HEIGHT,
+  PLAYER_COLOR,
+  BLOCK_SIZE,
+  BLOCK_COLOR,
+  SCORE_TEXT_COLOR,
+  GAME_OVER_TEXT_COLOR,
+} from "./constants";
 
 export interface RenderObjects {
   player: Graphics;

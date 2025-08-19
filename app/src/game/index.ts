@@ -1,18 +1,9 @@
-import { Text, Graphics } from "pixi.js";
+import { Text, Graphics, Application } from "pixi.js";
 import { createApp } from "./renderer";
 import { startPlayable } from "./playable";
 import { startVisualizer } from "./ai-visualizer";
 
-(async () => {
-  const app = await createApp();
-
-  // Menu background
-  const bg = new Graphics()
-    .rect(0, 0, app.screen.width, app.screen.height)
-    .fill("#001524");
-  app.stage.addChild(bg);
-
-  // Title
+function createTitle(app: Application) {
   const title = new Text({
     text: "Dodger Game",
     style: { fill: "#FFECD1", fontSize: 48, align: "center" },
@@ -20,9 +11,10 @@ import { startVisualizer } from "./ai-visualizer";
   title.anchor.set(0.5);
   title.x = app.screen.width / 2;
   title.y = app.screen.height / 3;
-  app.stage.addChild(title);
+  return title;
+}
 
-  // Play button
+function createPlayButton(app: Application) {
   const playBtn = new Text({
     text: "▶ Play Game",
     style: { fill: "#00ff00", fontSize: 32 },
@@ -32,9 +24,10 @@ import { startVisualizer } from "./ai-visualizer";
   playBtn.y = app.screen.height / 2;
   playBtn.eventMode = "static";
   playBtn.cursor = "pointer";
-  app.stage.addChild(playBtn);
+  return playBtn;
+}
 
-  // AI Visualizer button
+function createAIBtn(app: Application) {
   const aiBtn = new Text({
     text: "🤖 AI Visualizer",
     style: { fill: "#00aaff", fontSize: 32 },
@@ -44,16 +37,62 @@ import { startVisualizer } from "./ai-visualizer";
   aiBtn.y = app.screen.height / 2 + 60;
   aiBtn.eventMode = "static";
   aiBtn.cursor = "pointer";
-  app.stage.addChild(aiBtn);
+  return aiBtn;
+}
 
-  // Button handlers
+function createExitButton(app: Application) {
+  const exitBtn = new Text({
+    text: "X",
+    style: { fill: "#ff0000", fontSize: 32 },
+  });
+  exitBtn.anchor.set(1, 0);
+  exitBtn.x = app.screen.width - 16;
+  exitBtn.y = 16;
+  exitBtn.eventMode = "static";
+  exitBtn.cursor = "pointer";
+  return exitBtn;
+}
+
+function createMenu(app: Application) {
+  const menuContainer = new Graphics();
+  menuContainer.eventMode = "static";
+
+  const title = createTitle(app);
+  const playBtn = createPlayButton(app);
+  const aiBtn = createAIBtn(app);
+
+  menuContainer.addChild(title, playBtn, aiBtn);
+
   playBtn.on("pointerdown", () => {
-    app.stage.removeChildren();
+    app.stage.removeChild(menuContainer);
     startPlayable(app);
   });
 
   aiBtn.on("pointerdown", () => {
-    app.stage.removeChildren();
+    app.stage.removeChild(menuContainer);
     startVisualizer(app);
   });
+
+  return menuContainer;
+}
+
+function onExitButtonClick(app: Application) {
+  console.log("Exit button clicked!");
+}
+
+(async () => {
+  const app = await createApp();
+
+  const bg = new Graphics()
+    .rect(0, 0, app.screen.width, app.screen.height)
+    .fill("#001524");
+  app.stage.addChild(bg);
+
+  const menuContainer = createMenu(app);
+  app.stage.addChild(menuContainer);
+
+  const exitBtn = createExitButton(app);
+  app.stage.addChild(exitBtn);
+
+  exitBtn.on("pointerdown", () => onExitButtonClick(app));
 })();
