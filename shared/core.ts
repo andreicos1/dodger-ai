@@ -13,7 +13,8 @@ const PLAYER_HEIGHT = 20;
 const PLAYER_SPEED = 5;
 const BLOCK_SIZE = 30;
 const BLOCK_SPEED = 3;
-const BLOCK_SPAWN_INTERVAL = 60; // frames (1s at 60fps)
+const FRAME_RATE = 60;
+const BLOCK_SPAWN_INTERVAL = FRAME_RATE / 2; // 2 blocks per second
 
 export class DodgerCore {
   private width: number;
@@ -25,13 +26,14 @@ export class DodgerCore {
   private score = 0;
   private gameOver = false;
   private frameCounter = 0;
-  private elapsedTime = 0;
+  private startTime = 0;
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.playerX = width / 2 - PLAYER_WIDTH / 2;
     this.playerY = height - PLAYER_HEIGHT - 10;
+    this.startTime = Date.now();
   }
 
   public step(action: Action): GameState {
@@ -60,8 +62,8 @@ export class DodgerCore {
 
     this.moveBlocks();
 
-    this.elapsedTime += 1 / 60; // assume 60fps
-    this.score = Math.floor(this.elapsedTime);
+    const now = Date.now();
+    this.score = Math.floor((now - this.startTime) / 1000);
   }
 
   private spawnBlock() {
@@ -98,7 +100,7 @@ export class DodgerCore {
     this.score = 0;
     this.gameOver = false;
     this.frameCounter = 0;
-    this.elapsedTime = 0;
+    this.startTime = Date.now();
     this.playerX = this.width / 2 - PLAYER_WIDTH / 2;
     this.playerY = this.height - PLAYER_HEIGHT - 10;
   }

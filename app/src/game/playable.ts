@@ -14,7 +14,7 @@ export function startPlayable(app: Application) {
   const render = createRenderObjects(app);
   const keys = setupKeyboard();
 
-  app.ticker.add(() => {
+  const update = () => {
     let action: "LEFT" | "RIGHT" | "NONE" | "RESTART" = "NONE";
     if (keys["ArrowLeft"]) action = "LEFT";
     if (keys["ArrowRight"]) action = "RIGHT";
@@ -23,5 +23,11 @@ export function startPlayable(app: Application) {
     core.step(action);
     const state: GameState = core.getState();
     renderState(app, render, state);
-  });
+  };
+
+  app.ticker.add(update);
+
+  return () => {
+    app.ticker.remove(update);
+  };
 }
