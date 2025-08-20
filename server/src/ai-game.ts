@@ -1,4 +1,4 @@
-import { DodgerCore } from "../shared/core";
+import { DodgerCore } from "../../shared/core";
 import { WebSocketServer } from "ws";
 
 const WIDTH = 800;
