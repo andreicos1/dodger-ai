@@ -7,7 +7,8 @@ import websockets
 
 # RL actions (no RESTART here, handled internally)
 ACTIONS = ["LEFT", "RIGHT", "NONE"]
-
+PLAYER_WIDTH = 60
+BLOCK_SIZE = 30
 
 class DodgerEnvGym(gym.Env):
     metadata = {"render_modes": []}
@@ -17,8 +18,7 @@ class DodgerEnvGym(gym.Env):
         uri="ws://localhost:8080",
         width=800,
         height=600,
-        max_blocks=20,
-        score_norm=1000.0,
+        max_blocks=8,
     ):
         super().__init__()
         self.uri = uri
@@ -28,13 +28,12 @@ class DodgerEnvGym(gym.Env):
         self.width = width
         self.height = height
         self.max_blocks = max_blocks
-        self.score_norm = score_norm
 
         # Action space: LEFT, RIGHT, NONE
         self.action_space = spaces.Discrete(len(ACTIONS))
 
-        # Observation space: playerX, playerY, (x,y)*max_blocks, score
-        obs_size = 1 + 2 * max_blocks + 1  # 42 if max_blocks=20
+        # Observation space: playerX, (x,y)*max_blocks
+        obs_size = 1 + 2 * max_blocks
         self.observation_space = spaces.Box(
             low=0.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
@@ -67,10 +66,25 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
-                # Reward: survive = +1, game over = -1000
-                reward = 1.0
-                if self.done:
-                    reward = -1000.0
+
+                blocks = self.state["blocks"]
+                reward = 1  # survival reward
+
+                # Collision penalty
+                for block in blocks:
+                    if block["y"] < self.height * 0.7:
+                        continue
+                    if block['x'] + BLOCK_SIZE >= self.state["playerX"] and block['x'] <= self.state["playerX"] + PLAYER_WIDTH:
+                        reward -= 10.0
+
+                # Wall penalty
+                if self.state["playerX"] < self.width * 0.1 or self.state["playerX"] > self.width * 0.9:
+                    reward -= 2.0
+
+                # Centering bonus
+                center_x = self.width / 2
+                dist_from_center = abs(self.state["playerX"] - center_x) / (self.width / 2)
+                reward -= 0.5 * dist_from_center
 
                 return (
                     self._process_state(self.state),
@@ -83,22 +97,18 @@ class DodgerEnvGym(gym.Env):
     def _process_state(self, state):
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
 
-        # Player X only (normalized)
+        # Player X normalized
         obs[0] = state["playerX"] / self.width
 
-        # Sort blocks by distance to player Y (since playerY is fixed, just use block.y)
-        blocks = sorted(
-            state["blocks"],
-            key=lambda b: b["y"],  # closest to bottom first
-        )
+        # Sort blocks by y (closest to bottom first)
+        blocks = sorted(state["blocks"], key=lambda b: b["y"], reverse=True)
 
-        # Take up to max_blocks (20)
         for i, block in enumerate(blocks[: self.max_blocks]):
-            obs[1 + 2 * i] = block["x"] / self.width
-            obs[1 + 2 * i + 1] = block["y"] / self.height
+            dx = (block["x"] - state["playerX"]) / self.width   # relative horizontal distance
+            dy = (self.height - block["y"]) / self.height       # distance from player vertically (time-to-impact proxy)
 
-        # Normalize score
-        obs[-1] = state["score"] / self.score_norm
+            obs[1 + 2*i] = dx
+            obs[1 + 2*i + 1] = dy
 
         return obs
 
@@ -121,7 +131,7 @@ if __name__ == "__main__":
     env = DodgerEnvGym()
 
     model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=200_000)
+    model.learn(total_timesteps=1_000_000)
 
     model.save("dodger_ppo")
 
