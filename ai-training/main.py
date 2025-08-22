@@ -5,10 +5,20 @@ import gymnasium as gym
 from gymnasium import spaces
 import websockets
 
-# RL actions (no RESTART here, handled internally)
+import os
+import matplotlib.pyplot as plt
+import pandas as pd
+from stable_baselines3 import PPO
+from stable_baselines3.common.monitor import Monitor
+
+# Log directory
+log_dir = "logs/"
+os.makedirs(log_dir, exist_ok=True)
+
 ACTIONS = ["LEFT", "RIGHT", "NONE"]
 PLAYER_WIDTH = 60
 BLOCK_SIZE = 30
+
 
 class DodgerEnvGym(gym.Env):
     metadata = {"render_modes": []}
@@ -28,14 +38,13 @@ class DodgerEnvGym(gym.Env):
         self.width = width
         self.height = height
         self.max_blocks = max_blocks
+        self.player_y = self.height - 20 - 10
 
-        # Action space: LEFT, RIGHT, NONE
+        # Observation space: player_x, (dx, dy, block_x)*max_blocks
+        obs_size = 1 + 3 * max_blocks
         self.action_space = spaces.Discrete(len(ACTIONS))
-
-        # Observation space: playerX, (x,y)*max_blocks
-        obs_size = 1 + 2 * max_blocks
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(obs_size,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
 
         self.loop = asyncio.get_event_loop()
@@ -66,25 +75,30 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
+                # --- FIX 1: DENSE, POTENTIAL-BASED REWARD FUNCTION ---
+                reward = 0.0
+                if self.done:
+                    reward = -10.0  # Penalty for dying
+                else:
+                    # Find the closest threatening block
+                    threatening_blocks = [b for b in self.state["blocks"] if b["y"] < self.player_y]
+                    if not threatening_blocks:
+                        # If no blocks are threatening, reward being near the center
+                        player_center = self.state["playerX"] + PLAYER_WIDTH / 2
+                        dist_from_center = abs(player_center - self.width / 2)
+                        reward = 1.0 - (dist_from_center / (self.width / 2)) # Max reward at center
+                    else:
+                        # Find the block that is vertically closest
+                        closest_block = min(threatening_blocks, key=lambda b: self.player_y - b["y"])
 
-                blocks = self.state["blocks"]
-                reward = 1  # survival reward
+                        # Calculate horizontal distance between player and block centers
+                        player_center = self.state["playerX"] + PLAYER_WIDTH / 2
+                        block_center = closest_block["x"] + BLOCK_SIZE / 2
+                        horizontal_dist = abs(player_center - block_center)
 
-                # Collision penalty
-                for block in blocks:
-                    if block["y"] < self.height * 0.7:
-                        continue
-                    if block['x'] + BLOCK_SIZE >= self.state["playerX"] and block['x'] <= self.state["playerX"] + PLAYER_WIDTH:
-                        reward -= 10.0
-
-                # Wall penalty
-                if self.state["playerX"] < self.width * 0.1 or self.state["playerX"] > self.width * 0.9:
-                    reward -= 2.0
-
-                # Centering bonus
-                center_x = self.width / 2
-                dist_from_center = abs(self.state["playerX"] - center_x) / (self.width / 2)
-                reward -= 0.5 * dist_from_center
+                        # Reward is proportional to the normalized horizontal distance
+                        # The further away the player is, the higher the reward
+                        reward = (horizontal_dist / self.width) * 0.5
 
                 return (
                     self._process_state(self.state),
@@ -97,18 +111,24 @@ class DodgerEnvGym(gym.Env):
     def _process_state(self, state):
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
 
-        # Player X normalized
-        obs[0] = state["playerX"] / self.width
+        # --- FIX 2: NORMALIZE ALL POSITIONS TO [-1, 1] for consistency ---
+        # Player X normalized to [-1, 1] (center is 0)
+        obs[0] = (state["playerX"] / (self.width / 2)) - 1.0
 
-        # Sort blocks by y (closest to bottom first)
-        blocks = sorted(state["blocks"], key=lambda b: b["y"], reverse=True)
+        # Sort blocks by vertical distance (closest first)
+        blocks = sorted(state["blocks"], key=lambda b: abs(b["y"] - self.player_y))
 
         for i, block in enumerate(blocks[: self.max_blocks]):
-            dx = (block["x"] - state["playerX"]) / self.width   # relative horizontal distance
-            dy = (self.height - block["y"]) / self.height       # distance from player vertically (time-to-impact proxy)
+            # Relative horizontal distance, normalized to [-1, 1]
+            dx = (block["x"] - state["playerX"]) / self.width
+            # Relative vertical distance, normalized to approx [-1, 1]
+            dy = (self.player_y - block["y"]) / self.height
+            # Absolute block X position, normalized to [-1, 1]
+            block_x_norm = (block["x"] / (self.width / 2)) - 1.0
 
-            obs[1 + 2*i] = dx
-            obs[1 + 2*i + 1] = dy
+            obs[1 + 3 * i] = dx
+            obs[1 + 3 * i + 1] = dy
+            obs[1 + 3 * i + 2] = block_x_norm
 
         return obs
 
@@ -124,21 +144,44 @@ class DodgerEnvGym(gym.Env):
         return obs, reward, terminated, truncated, info
 
 
-# Example training loop with Stable-Baselines3 PPO
 if __name__ == "__main__":
-    from stable_baselines3 import PPO
+    gym_env = DodgerEnvGym()
+    env = Monitor(gym_env, log_dir)
 
-    env = DodgerEnvGym()
+    # --- FIX 3: TUNE HYPERPARAMETERS FOR THIS PROBLEM ---
+    model = PPO(
+        "MlpPolicy",
+        env,
+        verbose=1,
+        n_steps=32768,       # Collect more experience per update
+        gamma=0.95,         # Focus more on immediate rewards
+        ent_coef=0.01,      # Encourage exploration to avoid local minima
+        learning_rate=3e-4, # Standard learning rate
+        tensorboard_log="./ppo_dodger_tensorboard/"
+    )
+    model.learn(total_timesteps=500_000)
 
-    model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=1_000_000)
+    model.save("dodger_ppo_final_dense")
 
-    model.save("dodger_ppo")
+    # Plotting code...
+    monitor_files = [f for f in os.listdir(log_dir) if f.startswith("monitor")]
+    if not monitor_files:
+        print("No monitor file found. Exiting.")
+        exit()
 
-    # Test run
-    obs, _ = env.reset()
-    for _ in range(1000):
-        action, _ = model.predict(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
-        if terminated or truncated:
-            obs, _ = env.reset()
+    monitor_file = max(monitor_files, key=lambda f: os.path.getmtime(os.path.join(log_dir, f)))
+    df = pd.read_csv(os.path.join(log_dir, monitor_file), skiprows=1)
+
+    df["timesteps"] = df["l"].cumsum()
+    window = 50
+    df["reward_smooth"] = df["r"].rolling(window, min_periods=1).mean()
+
+    plt.figure(figsize=(12, 5))
+    plt.plot(df["timesteps"], df["r"], alpha=0.3, label="Episode reward (raw)")
+    plt.plot(df["timesteps"], df["reward_smooth"], label=f"Smoothed reward (window={window})")
+    plt.xlabel("Timesteps")
+    plt.ylabel("Episode Reward")
+    plt.title("Training Progress (Dense Reward)")
+    plt.legend()
+    plt.grid()
+    plt.show()
