@@ -75,30 +75,10 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
-                # --- FIX 1: DENSE, POTENTIAL-BASED REWARD FUNCTION ---
-                reward = 0.0
+                reward = 0.1
+
                 if self.done:
-                    reward = -10.0  # Penalty for dying
-                else:
-                    # Find the closest threatening block
-                    threatening_blocks = [b for b in self.state["blocks"] if b["y"] < self.player_y]
-                    if not threatening_blocks:
-                        # If no blocks are threatening, reward being near the center
-                        player_center = self.state["playerX"] + PLAYER_WIDTH / 2
-                        dist_from_center = abs(player_center - self.width / 2)
-                        reward = 1.0 - (dist_from_center / (self.width / 2)) # Max reward at center
-                    else:
-                        # Find the block that is vertically closest
-                        closest_block = min(threatening_blocks, key=lambda b: self.player_y - b["y"])
-
-                        # Calculate horizontal distance between player and block centers
-                        player_center = self.state["playerX"] + PLAYER_WIDTH / 2
-                        block_center = closest_block["x"] + BLOCK_SIZE / 2
-                        horizontal_dist = abs(player_center - block_center)
-
-                        # Reward is proportional to the normalized horizontal distance
-                        # The further away the player is, the higher the reward
-                        reward = (horizontal_dist / self.width) * 0.5
+                    reward = -10.0  
 
                 return (
                     self._process_state(self.state),
@@ -148,18 +128,13 @@ if __name__ == "__main__":
     gym_env = DodgerEnvGym()
     env = Monitor(gym_env, log_dir)
 
-    # --- FIX 3: TUNE HYPERPARAMETERS FOR THIS PROBLEM ---
     model = PPO(
         "MlpPolicy",
         env,
         verbose=1,
-        n_steps=32768,       # Collect more experience per update
-        gamma=0.95,         # Focus more on immediate rewards
-        ent_coef=0.01,      # Encourage exploration to avoid local minima
-        learning_rate=3e-4, # Standard learning rate
         tensorboard_log="./ppo_dodger_tensorboard/"
     )
-    model.learn(total_timesteps=500_000)
+    model.learn(total_timesteps=200_000)
 
     model.save("dodger_ppo_final_dense")
 
