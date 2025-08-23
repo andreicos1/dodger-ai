@@ -10,7 +10,6 @@ export interface GameState {
 
 const PLAYER_WIDTH = 60;
 const PLAYER_HEIGHT = 20;
-// Speeds are now in pixels PER SECOND, not per frame
 const PLAYER_SPEED_PPS = 300; // 5 pixels/frame * 60 fps = 300
 const BLOCK_SPEED_PPS = 180; // 3 pixels/frame * 60 fps = 180
 const BLOCK_SIZE = 30;
@@ -27,8 +26,6 @@ export class DodgerCore {
   private score = 0;
   private gameOver = false;
   private startTime = 0;
-
-  // Timer for block spawning
   private timeUntilNextBlock: number = SPAWN_INTERVAL_SECONDS;
 
   constructor(width: number, height: number) {
@@ -39,7 +36,6 @@ export class DodgerCore {
     this.startTime = Date.now();
   }
 
-  // The step function now accepts a delta time (dt) in seconds
   public step(action: Action, dt: number): GameState {
     if (this.gameOver && action === "RESTART") {
       this.reset();
@@ -80,7 +76,7 @@ export class DodgerCore {
   private moveBlocks(dt: number) {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
       const block = this.blocks[i];
-      block.y += BLOCK_SPEED_PPS * dt; // Move based on time, not frames
+      block.y += BLOCK_SPEED_PPS * dt;
       if (block.y > this.height) {
         this.blocks.splice(i, 1);
         continue;
@@ -93,7 +89,6 @@ export class DodgerCore {
   }
 
   private isColliding(block: { x: number; y: number }): boolean {
-    // Collision logic remains the same
     return !(
       this.playerX + PLAYER_WIDTH < block.x ||
       this.playerX > block.x + BLOCK_SIZE ||

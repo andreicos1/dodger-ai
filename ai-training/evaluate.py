@@ -1,18 +1,19 @@
-import asyncio
 import time
 from stable_baselines3 import PPO
-from train import DodgerEnvGym  # Import your environment from the training script
+from train import DodgerEnvGym  
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
-# --- Configuration ---
-MODEL_PATH = "dodger_ppo_final_dense.zip"  # Path to your saved model
+MODEL_PATH = "dodger_ppo_framestack.zip" 
 FPS = 60  # Target frames per second for visualization
+N_STACK = 4 # This MUST match the n_stack used during training
 
-# --- Main Evaluation Loop ---
 if __name__ == "__main__":
-    # Create the environment
-    env = DodgerEnvGym()
+    def make_env():
+        return DodgerEnvGym()
+    
+    vec_env = DummyVecEnv([make_env])
+    env = VecFrameStack(vec_env, n_stack=N_STACK)
 
-    # Load the trained model
     try:
         model = PPO.load(MODEL_PATH)
         print(f"Model loaded from {MODEL_PATH}")
@@ -21,24 +22,16 @@ if __name__ == "__main__":
         print("Please make sure you have trained and saved the model first.")
         exit()
 
-
-    # Run episodes indefinitely
-    obs, _ = env.reset()
+    obs = env.reset()
     while True:
         try:
-            # Get the action from the model
             action, _states = model.predict(obs, deterministic=True)
 
-            # Perform the action in the environment
-            obs, reward, terminated, truncated, info = env.step(action)
+            obs, reward, terminated, info = env.step(action)
 
-            # If the episode is over, reset the environment
-            if terminated or truncated:
+            if terminated[0]:
                 print("Episode finished. Resetting...")
-                obs, _ = env.reset()
 
-            # --- THIS IS THE SLOWDOWN ---
-            # Add a delay to control the speed of the simulation
             time.sleep(1 / FPS)
 
         except KeyboardInterrupt:
@@ -46,4 +39,7 @@ if __name__ == "__main__":
             break
         except Exception as e:
             print(f"An error occurred: {e}")
+            env.close()
             break
+
+    env.close()

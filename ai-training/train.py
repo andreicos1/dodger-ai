@@ -6,10 +6,9 @@ from gymnasium import spaces
 import websockets
 
 import os
-import matplotlib.pyplot as plt
-import pandas as pd
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 # Log directory
 log_dir = "logs/"
@@ -28,7 +27,7 @@ class DodgerEnvGym(gym.Env):
         uri="ws://localhost:8080",
         width=800,
         height=600,
-        max_blocks=8,
+        max_blocks=6,
     ):
         super().__init__()
         self.uri = uri
@@ -46,8 +45,8 @@ class DodgerEnvGym(gym.Env):
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
-
         self.loop = asyncio.get_event_loop()
+        self.was_threatened = False
 
     async def _connect(self):
         if self.ws is None or self.ws.closed:
@@ -63,6 +62,25 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
                 return self._process_state(self.state)
+            
+    def _is_player_threatened(self, state):
+        """Helper function to determine if the player is in immediate danger."""
+        player_x_start = state["playerX"]
+        player_x_end = player_x_start + PLAYER_WIDTH
+        # A block is a threat if it's in the bottom 35% of the screen
+        danger_zone_y_threshold = self.height * 0.65
+
+        for block in state["blocks"]:
+            if block["y"] > danger_zone_y_threshold:
+                block_x_start = block["x"]
+                block_x_end = block_x_start + BLOCK_SIZE
+                # Check for horizontal overlap (imminent collision path)
+                is_under_block = (
+                    player_x_start < block_x_end and player_x_end > block_x_start
+                )
+                if is_under_block:
+                    return True  # At least one block is a direct threat
+        return False
 
     async def _step_async(self, action):
         await self.ws.send(
@@ -75,10 +93,19 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
-                reward = 0.1
+                reward = 0.0  # Default reward is zero. No reward for just surviving.
 
                 if self.done:
-                    reward = -10.0  
+                    reward = -1.0  # Clear, simple penalty for failure.
+                else:
+                    is_currently_threatened = self._is_player_threatened(self.state)
+
+                    # Check for the "successful dodge" event
+                    if self.was_threatened and not is_currently_threatened:
+                        reward = 1.0  # Big reward for the specific action of dodging!
+
+                    # Update the state for the next frame
+                    self.was_threatened = is_currently_threatened
 
                 return (
                     self._process_state(self.state),
@@ -91,7 +118,6 @@ class DodgerEnvGym(gym.Env):
     def _process_state(self, state):
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
 
-        # --- FIX 2: NORMALIZE ALL POSITIONS TO [-1, 1] for consistency ---
         # Player X normalized to [-1, 1] (center is 0)
         obs[0] = (state["playerX"] / (self.width / 2)) - 1.0
 
@@ -114,6 +140,7 @@ class DodgerEnvGym(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.was_threatened = False
         obs = self.loop.run_until_complete(self._reset_async())
         return obs, {}
 
@@ -125,38 +152,21 @@ class DodgerEnvGym(gym.Env):
 
 
 if __name__ == "__main__":
-    gym_env = DodgerEnvGym()
-    env = Monitor(gym_env, log_dir)
+    base_env = DodgerEnvGym()
+    monitored_env = Monitor(base_env, log_dir)
+    vec_env = DummyVecEnv([lambda: monitored_env])
+    stacked_env = VecFrameStack(vec_env, n_stack=4)
 
     model = PPO(
         "MlpPolicy",
-        env,
+        stacked_env, 
         verbose=1,
-        tensorboard_log="./ppo_dodger_tensorboard/"
+        tensorboard_log="./ppo_dodger_tensorboard/",
+        gamma=0.999,          # Value future rewards more highly
+        n_steps=4096,         # Collect more experience before each update
+        ent_coef=0.01,        # Encourage more exploration
+        learning_rate=1e-4,   # Use a smaller, more stable learning rate
     )
-    model.learn(total_timesteps=200_000)
+    model.learn(total_timesteps=5_000_000)
 
-    model.save("dodger_ppo_final_dense")
-
-    # Plotting code...
-    monitor_files = [f for f in os.listdir(log_dir) if f.startswith("monitor")]
-    if not monitor_files:
-        print("No monitor file found. Exiting.")
-        exit()
-
-    monitor_file = max(monitor_files, key=lambda f: os.path.getmtime(os.path.join(log_dir, f)))
-    df = pd.read_csv(os.path.join(log_dir, monitor_file), skiprows=1)
-
-    df["timesteps"] = df["l"].cumsum()
-    window = 50
-    df["reward_smooth"] = df["r"].rolling(window, min_periods=1).mean()
-
-    plt.figure(figsize=(12, 5))
-    plt.plot(df["timesteps"], df["r"], alpha=0.3, label="Episode reward (raw)")
-    plt.plot(df["timesteps"], df["reward_smooth"], label=f"Smoothed reward (window={window})")
-    plt.xlabel("Timesteps")
-    plt.ylabel("Episode Reward")
-    plt.title("Training Progress (Dense Reward)")
-    plt.legend()
-    plt.grid()
-    plt.show()
+    model.save("dodger_ppo_framestack")
