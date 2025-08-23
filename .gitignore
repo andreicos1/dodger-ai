@@ -26,3 +26,4 @@ dist-ssr
 # AI Training
 /ai-training/dodger-ai
 /ai-training/ppo_dodger_tensorboard
+*__pycache__/
