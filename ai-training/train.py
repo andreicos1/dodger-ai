@@ -93,16 +93,16 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
-                reward = 0.0  # Default reward is zero. No reward for just surviving.
+                reward = 0.002  # Default reward for surviving
 
                 if self.done:
-                    reward = -1.0  # Clear, simple penalty for failure.
+                    reward = -2.0  # Penalty for failure.
                 else:
                     is_currently_threatened = self._is_player_threatened(self.state)
 
                     # Check for the "successful dodge" event
                     if self.was_threatened and not is_currently_threatened:
-                        reward = 1.0  # Big reward for the specific action of dodging!
+                        reward = 1.0  # Reward for the specific action of dodging!
 
                     # Update the state for the next frame
                     self.was_threatened = is_currently_threatened
@@ -162,11 +162,11 @@ if __name__ == "__main__":
         stacked_env, 
         verbose=1,
         tensorboard_log="./ppo_dodger_tensorboard/",
-        gamma=0.999,          # Value future rewards more highly
-        n_steps=4096,         # Collect more experience before each update
-        ent_coef=0.01,        # Encourage more exploration
+        gamma=0.997,          # Value future rewards more highly
+        n_steps=2048,
+        ent_coef=0.005,        # Encourage more exploration
         learning_rate=1e-4,   # Use a smaller, more stable learning rate
     )
-    model.learn(total_timesteps=5_000_000)
+    model.learn(total_timesteps=10_000_000)
 
     model.save("dodger_ppo_framestack")
