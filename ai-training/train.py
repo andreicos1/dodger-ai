@@ -100,9 +100,15 @@ class DodgerEnvGym(gym.Env):
                 else:
                     is_currently_threatened = self._is_player_threatened(self.state)
 
+                    if is_currently_threatened:
+                        reward = -0.01  # Penalty for being in the danger zone
+
                     # Check for the "successful dodge" event
                     if self.was_threatened and not is_currently_threatened:
                         reward = 1.0  # Reward for the specific action of dodging!
+
+                    if not self.was_threatened and is_currently_threatened:
+                        reward = -1.25  # Penalty for entering the danger zone
 
                     # Update the state for the next frame
                     self.was_threatened = is_currently_threatened
@@ -166,7 +172,8 @@ if __name__ == "__main__":
         n_steps=2048,
         ent_coef=0.005,        # Encourage more exploration
         learning_rate=1e-4,   # Use a smaller, more stable learning rate
+        device="cpu"
     )
-    model.learn(total_timesteps=10_000_000)
+    model.learn(total_timesteps=5_000_000)
 
     model.save("dodger_ppo_framestack")
