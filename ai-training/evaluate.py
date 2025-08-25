@@ -2,8 +2,10 @@ import time
 from stable_baselines3 import PPO
 from train import DodgerEnvGym  
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+import asyncio
+import json
 
-MODEL_PATH = "dodger_ppo_framestack.zip" 
+MODEL_PATH = "dodger_ppo_framestack_parallel.zip" 
 FPS = 60  # Target frames per second for visualization
 N_STACK = 4 # This MUST match the n_stack used during training
 
@@ -23,6 +25,14 @@ if __name__ == "__main__":
         exit()
 
     obs = env.reset()
+
+    inner_env = vec_env.envs[0]
+
+    async def become_owner():
+        await inner_env.ws.send(json.dumps({"type": "become_shared_owner"}))
+
+    inner_env.loop.run_until_complete(become_owner())
+
     while True:
         try:
             action, _states = model.predict(obs, deterministic=True)
@@ -31,6 +41,7 @@ if __name__ == "__main__":
 
             if terminated[0]:
                 print("Episode finished. Resetting...")
+                obs = env.reset()
 
             time.sleep(1 / FPS)
 

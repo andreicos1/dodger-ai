@@ -8,7 +8,7 @@ import websockets
 import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack
 
 # Log directory
 log_dir = "logs/"
@@ -27,7 +27,7 @@ class DodgerEnvGym(gym.Env):
         uri="ws://localhost:8080",
         width=800,
         height=600,
-        max_blocks=6,
+        max_blocks=8,
     ):
         super().__init__()
         self.uri = uri
@@ -93,22 +93,19 @@ class DodgerEnvGym(gym.Env):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
 
-                reward = 0.002  # Default reward for surviving
+                reward = 0.0002  # Default reward for surviving
 
                 if self.done:
-                    reward = -2.0  # Penalty for failure.
+                    reward = -1.5  # Penalty for failure.
                 else:
                     is_currently_threatened = self._is_player_threatened(self.state)
-
-                    if is_currently_threatened:
-                        reward = -0.01  # Penalty for being in the danger zone
 
                     # Check for the "successful dodge" event
                     if self.was_threatened and not is_currently_threatened:
                         reward = 1.0  # Reward for the specific action of dodging!
 
                     if not self.was_threatened and is_currently_threatened:
-                        reward = -1.25  # Penalty for entering the danger zone
+                        reward = -1.1  # Penalty for entering the danger zone
 
                     # Update the state for the next frame
                     self.was_threatened = is_currently_threatened
@@ -158,22 +155,32 @@ class DodgerEnvGym(gym.Env):
 
 
 if __name__ == "__main__":
-    base_env = DodgerEnvGym()
-    monitored_env = Monitor(base_env, log_dir)
-    vec_env = DummyVecEnv([lambda: monitored_env])
+    def make_env():
+        def _init():
+            env = DodgerEnvGym()
+            env = Monitor(env, log_dir)
+            return env
+        return _init
+
+    num_envs = 8  # parallel environments
+    vec_env = SubprocVecEnv([make_env() for _ in range(num_envs)])
     stacked_env = VecFrameStack(vec_env, n_stack=4)
+    policy_kwargs = dict(
+        net_arch=[128, 64]  # two hidden layers
+    )
 
     model = PPO(
         "MlpPolicy",
-        stacked_env, 
+        stacked_env,
         verbose=1,
         tensorboard_log="./ppo_dodger_tensorboard/",
-        gamma=0.997,          # Value future rewards more highly
-        n_steps=2048,
-        ent_coef=0.005,        # Encourage more exploration
-        learning_rate=1e-4,   # Use a smaller, more stable learning rate
-        device="cpu"
+        gamma=0.998,
+        policy_kwargs=policy_kwargs,
+        n_steps=2048,       # per env → total batch = 8*2048
+        ent_coef=0.005,
+        learning_rate=1e-4,
+        device="cuda",      # use GPU
     )
-    model.learn(total_timesteps=5_000_000)
 
-    model.save("dodger_ppo_framestack")
+    model.learn(total_timesteps=1_000_000)
+    model.save("dodger_ppo_framestack_parallel")

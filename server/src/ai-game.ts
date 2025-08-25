@@ -1,4 +1,4 @@
-import { DodgerCore, Action, GameState } from "../../shared/core";
+import { DodgerCore, Action } from "../../shared/core";
 import { WebSocketServer, WebSocket } from "ws";
 
 const WIDTH = 800;
@@ -22,7 +22,8 @@ let sharedGameOwner: WebSocket | null = null;
 wss.on("connection", (ws) => {
   console.log("Client connected");
 
-  let game: DodgerCore | null = null;
+  let game = new DodgerCore(WIDTH, HEIGHT);
+  games.set(ws, game);
   let isSpectator = false;
 
   ws.on("message", (msg) => {
@@ -31,7 +32,6 @@ wss.on("connection", (ws) => {
 
       if (data.type === "watch") {
         isSpectator = true;
-        console.log("Client is a spectator");
         if (sharedGame) {
           ws.send(
             JSON.stringify({ type: "state", state: sharedGame.getState() })
@@ -40,57 +40,54 @@ wss.on("connection", (ws) => {
           ws.send(
             JSON.stringify({
               type: "error",
-              message: "No active game to watch",
+              message: "No active shared game to watch",
             })
           );
         }
         return;
       }
 
+      if (data.type === "become_shared_owner") {
+        // This client’s game becomes the shared game
+        sharedGame = game;
+        sharedGameOwner = ws;
+        console.log("Client became shared game owner");
+        return;
+      }
+
       if (data.type === "step") {
-        if (!game) {
-          game = new DodgerCore(WIDTH, HEIGHT);
-          games.set(ws, game);
-
-          if (!sharedGame) {
-            sharedGame = game;
-            sharedGameOwner = ws;
-          }
-        }
-
         const state = game.step(data.action as Action, FIXED_DT);
-
         ws.send(JSON.stringify({ type: "state", state }));
 
+        // If this client is the shared owner, broadcast to spectators
         if (game === sharedGame) {
           for (const client of wss.clients) {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              if (client !== sharedGameOwner) {
-                client.send(JSON.stringify({ type: "state", state }));
-              }
+            if (
+              client !== ws &&
+              client.readyState === WebSocket.OPEN &&
+              client !== sharedGameOwner
+            ) {
+              client.send(JSON.stringify({ type: "state", state }));
             }
           }
         }
       } else if (data.type === "restart") {
-        if (!game) {
-          game = new DodgerCore(WIDTH, HEIGHT);
-          games.set(ws, game);
+        game = new DodgerCore(WIDTH, HEIGHT);
+        games.set(ws, game);
 
-          if (!sharedGame) {
-            sharedGame = game;
-            sharedGameOwner = ws;
-          }
+        if (ws === sharedGameOwner) {
+          sharedGame = game;
+          console.log("Shared game restarted");
         }
 
         const state = game.step("RESTART", FIXED_DT);
         ws.send(JSON.stringify({ type: "state", state }));
 
-        if (game === sharedGame) {
+        // Broadcast to spectators if this is the shared game
+        if (ws === sharedGameOwner) {
           for (const client of wss.clients) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
-              if (client !== sharedGameOwner) {
-                client.send(JSON.stringify({ type: "state", state }));
-              }
+              client.send(JSON.stringify({ type: "state", state }));
             }
           }
         }
@@ -104,14 +101,12 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Client disconnected");
+    games.delete(ws);
 
-    if (game) {
-      games.delete(ws);
-      if (game === sharedGame) {
-        sharedGame = null;
-        sharedGameOwner = null;
-        console.log("Shared game owner disconnected, clearing shared game");
-      }
+    if (game === sharedGame) {
+      sharedGame = null;
+      sharedGameOwner = null;
+      console.log("Shared game owner disconnected, clearing shared game");
     }
   });
 });
