@@ -5,7 +5,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 import asyncio
 import json
 
-MODEL_PATH = "dodger_ppo_framestack_parallel.zip" 
+MODEL_PATH = "best_model/best_model.zip" 
 FPS = 60  # Target frames per second for visualization
 N_STACK = 4 # This MUST match the n_stack used during training
 

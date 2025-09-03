@@ -6,9 +6,13 @@ from gymnasium import spaces
 import websockets
 
 import os
+from gymnasium.wrappers import TimeLimit
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack
+from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.utils import get_schedule_fn
+from stable_baselines3.common.logger import configure
 
 # Log directory
 log_dir = "logs/"
@@ -27,7 +31,7 @@ class DodgerEnvGym(gym.Env):
         uri="ws://localhost:8080",
         width=800,
         height=600,
-        max_blocks=8,
+        max_blocks=10,
     ):
         super().__init__()
         self.uri = uri
@@ -82,6 +86,40 @@ class DodgerEnvGym(gym.Env):
                     return True  # At least one block is a direct threat
         return False
 
+    def _get_reward(self):
+        reward = 0.001  # Default reward for surviving
+
+        if self.done:
+            reward = -5.0  # Penalty for failure.
+        else:
+            is_currently_threatened = self._is_player_threatened(self.state)
+
+            # Check for the "successful dodge" event
+            if self.was_threatened and not is_currently_threatened:
+                reward = 2.0  # Reward for the specific action of dodging!
+
+            if not self.was_threatened and is_currently_threatened:
+                reward = -1.5  # Penalty for entering the danger zone
+
+            # Update the state for the next frame
+            self.was_threatened = is_currently_threatened
+
+        return reward
+    
+    def _get_reward_curriculum_adjustment(self):
+        reward = 0.005  # Default reward for surviving
+
+        if self.done:
+            reward = -10.0 
+        else :
+            is_currently_threatened = self._is_player_threatened(self.state)
+            if not self.was_threatened and is_currently_threatened:
+                reward = -0.25  # Penalty for entering the danger zone
+            
+            self.was_threatened = is_currently_threatened
+
+        return reward
+
     async def _step_async(self, action):
         await self.ws.send(
             json.dumps({"type": "step", "action": ACTIONS[action]})
@@ -92,23 +130,9 @@ class DodgerEnvGym(gym.Env):
             if data["type"] == "state":
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
+                # reward = self._get_reward()
+                reward = self._get_reward_curriculum_adjustment()
 
-                reward = 0.0002  # Default reward for surviving
-
-                if self.done:
-                    reward = -1.5  # Penalty for failure.
-                else:
-                    is_currently_threatened = self._is_player_threatened(self.state)
-
-                    # Check for the "successful dodge" event
-                    if self.was_threatened and not is_currently_threatened:
-                        reward = 1.0  # Reward for the specific action of dodging!
-
-                    if not self.was_threatened and is_currently_threatened:
-                        reward = -1.1  # Penalty for entering the danger zone
-
-                    # Update the state for the next frame
-                    self.was_threatened = is_currently_threatened
 
                 return (
                     self._process_state(self.state),
@@ -155,32 +179,79 @@ class DodgerEnvGym(gym.Env):
 
 
 if __name__ == "__main__":
+    log_dir = "logs/"
+    os.makedirs(log_dir, exist_ok=True)
+
     def make_env():
         def _init():
             env = DodgerEnvGym()
             env = Monitor(env, log_dir)
+            # hard-limit episode length to 30 real-world minutes @60 fps
+            env = TimeLimit(env, max_episode_steps=60 * 60 * 30)
             return env
         return _init
 
-    num_envs = 8  # parallel environments
-    vec_env = SubprocVecEnv([make_env() for _ in range(num_envs)])
-    stacked_env = VecFrameStack(vec_env, n_stack=4)
-    policy_kwargs = dict(
-        net_arch=[128, 64]  # two hidden layers
+    num_envs = 8
+    vec_env   = SubprocVecEnv([make_env() for _ in range(num_envs)])
+    train_env = VecFrameStack(vec_env, n_stack=4)
+
+    # single-environment eval wrapper
+    eval_env  = VecFrameStack(SubprocVecEnv([make_env()]), n_stack=4)
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # 3.  OVERRIDE HYPER-PARAMETERS WHEN LOADING
+    # ──────────────────────────────────────────────────────────────────────────────
+    # new hyper-parameters
+    new_lr      = 2.5e-4           # constant learning rate
+    new_n_steps = 4096             # per env  →  4096*8 = 32 768 collected steps
+    new_bsize   = 1024
+    new_clip    = 0.15
+    new_entc    = 0.002
+
+    custom_objects = {
+        "learning_rate": new_lr,
+        "n_steps":       new_n_steps,
+        "batch_size":    new_bsize,
+        "clip_range":    new_clip,
+        "ent_coef":      new_entc,
+        # schedules built from the new scalars
+        "lr_schedule":      get_schedule_fn(new_lr),
+        "clip_range_sched": get_schedule_fn(new_clip),
+    }
+
+    model = PPO.load(
+        "./best_model/best_model.zip",
+        env=train_env,
+        device="cuda",
+        custom_objects=custom_objects,
     )
 
-    model = PPO(
-        "MlpPolicy",
-        stacked_env,
-        verbose=1,
-        tensorboard_log="./ppo_dodger_tensorboard/",
-        gamma=0.998,
-        policy_kwargs=policy_kwargs,
-        n_steps=2048,       # per env → total batch = 8*2048
-        ent_coef=0.005,
-        learning_rate=1e-4,
-        device="cuda",      # use GPU
+    # ──────────────────────────────────────────────────────────────────────────────
+    # 4.  PERIODIC EVALUATION – SAVE THE BEST MODEL
+    # ──────────────────────────────────────────────────────────────────────────────
+    # evaluate every ~100 000 environment steps
+    eval_freq = 100_000 // num_envs      # callback counter is in "env steps"
+
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path="./best_model/",
+        log_path="./best_model/",
+        eval_freq=eval_freq,
+        n_eval_episodes=20,
+        deterministic=True,
+        render=False,
+    )
+    tb_path = "./ppo_dodger_tensorboard/"
+    logger = configure(tb_path, ["stdout", "tensorboard", "log", "json"])
+    model.set_logger(logger)
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # 5.  CONTINUE TRAINING
+    # ──────────────────────────────────────────────────────────────────────────────
+    model.learn(
+        total_timesteps=5_000_000,     # extra timesteps to collect
+        reset_num_timesteps=False,     # keep the timestep counter
+        callback=eval_callback,
     )
 
-    model.learn(total_timesteps=1_000_000)
-    model.save("dodger_ppo_framestack_parallel")
+    model.save("dodger_ppo_framestack_parallel_v2")
