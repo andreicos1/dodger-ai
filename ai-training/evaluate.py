@@ -10,7 +10,7 @@ N_STACK = 4
 
 base_env = DodgerEnvGymAsync()
 env = AsyncFrameStack(base_env, n_stack=N_STACK)
-model = PPO.load(MODEL_PATH)
+model = PPO.load(MODEL_PATH, device="cpu")
 print(f"Model loaded from {MODEL_PATH}")
 
 async def run_evaluation_stream():
