@@ -4,3 +4,5 @@ gymnasium==0.29.1
 stable-baselines3==2.6.0
 sb3-contrib==2.6.0
 tensorboard==2.10.1
+fastapi==0.116.1
+uvicorn==0.35.0
