@@ -10,6 +10,7 @@ export interface GameState {
 
 const PLAYER_WIDTH = 60;
 const PLAYER_HEIGHT = 20;
+const PLAYER_Y_OFFSET = 10;
 const PLAYER_SPEED_PPS = 300; // 5 pixels/frame * 60 fps = 300
 const BLOCK_SPEED_PPS = 180; // 3 pixels/frame * 60 fps = 180
 const BLOCK_SIZE = 30;
@@ -32,7 +33,7 @@ export class DodgerCore {
     this.width = width;
     this.height = height;
     this.playerX = width / 2 - PLAYER_WIDTH / 2;
-    this.playerY = height - PLAYER_HEIGHT - 10;
+    this.playerY = height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
     this.startTime = Date.now();
   }
 
@@ -103,7 +104,7 @@ export class DodgerCore {
     this.gameOver = false;
     this.startTime = Date.now();
     this.playerX = this.width / 2 - PLAYER_WIDTH / 2;
-    this.playerY = this.height - PLAYER_HEIGHT - 10;
+    this.playerY = this.height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
     this.timeUntilNextBlock = SPAWN_INTERVAL_SECONDS;
   }
 
