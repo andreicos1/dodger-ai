@@ -63,13 +63,17 @@ function setupTouch(width: number): {
   };
 }
 
-export function startPlayable(app: Application) {
+export function startPlayable(
+  app: Application,
+  onGameOver: (score: number) => void
+) {
   const core = new DodgerCore(app.screen.width, app.screen.height);
   const render = createRenderObjects(app);
   const keys = setupKeyboard();
   const touch = setupTouch(app.screen.width);
 
   let isPaused = false;
+  let gameOverTriggered = false;
 
   const update = (ticker: Ticker) => {
     if (isPaused) return;
@@ -79,12 +83,18 @@ export function startPlayable(app: Application) {
     let action: Action = "NONE";
     if (keys["ArrowLeft"] || touch.isLeft()) action = "LEFT";
     if (keys["ArrowRight"] || touch.isRight()) action = "RIGHT";
-    if (keys["Space"] || touch.isTap()) action = "RESTART";
 
     core.step(action, dt);
 
     const state: GameState = core.getState();
     renderState(app, render, state);
+
+    if (state.gameOver && !gameOverTriggered) {
+      gameOverTriggered = true;
+      isPaused = true;
+      core.pause();
+      onGameOver(state.score);
+    }
   };
 
   app.ticker.add(update);
@@ -100,6 +110,13 @@ export function startPlayable(app: Application) {
     resume: () => {
       isPaused = false;
       core.resume();
+    },
+    restart: () => {
+      gameOverTriggered = false;
+      isPaused = false;
+      core.step("RESTART", 0);
+      const state = core.getState();
+      renderState(app, render, state);
     },
   };
 }

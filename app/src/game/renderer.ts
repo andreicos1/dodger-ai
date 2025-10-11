@@ -82,7 +82,4 @@ export function renderState(
   }
 
   render.scoreText.text = `Score: ${state.score}`;
-  render.gameOverText.text = state.gameOver
-    ? `Game Over!\nScore: ${state.score}\nPress Space to Restart`
-    : "";
 }

@@ -57,6 +57,7 @@ let currentMode: {
   cleanup: () => void;
   pause: () => void;
   resume: () => void;
+  restart?: () => void;
 } | null = null;
 
 function createMenu(app: Application) {
@@ -70,7 +71,14 @@ function createMenu(app: Application) {
 
   playBtn.on("pointerdown", () => {
     app.stage.removeChild(menuContainer);
-    currentMode = startPlayable(app);
+    currentMode = startPlayable(app, (score) => {
+      const gameOverMenu = createGameOverMenu(app, score, () => {
+        if (currentMode && currentMode.restart) {
+          currentMode.restart();
+        }
+      });
+      app.stage.addChild(gameOverMenu);
+    });
     addExitButton(app);
   });
 
@@ -133,6 +141,59 @@ function createPauseMenu(app: Application) {
   resumeBtn.on("pointerdown", () => {
     if (currentMode) currentMode.resume();
     app.stage.removeChild(overlay);
+  });
+
+  mainMenuBtn.on("pointerdown", () => resetToMainMenu(app));
+
+  return overlay;
+}
+
+function createGameOverMenu(
+  app: Application,
+  score: number,
+  onPlayAgain: () => void
+) {
+  const overlay = new Container();
+
+  const bg = new Graphics()
+    .rect(0, 0, app.screen.width, app.screen.height)
+    .fill({ color: 0x000000, alpha: 0.6 });
+  overlay.addChild(bg);
+
+  const gameOverTitle = new Text({
+    text: `Game Over!\nScore: ${score}`,
+    style: { fill: "#FFECD1", fontSize: 48, align: "center" },
+  });
+  gameOverTitle.anchor.set(0.5);
+  gameOverTitle.x = app.screen.width / 2;
+  gameOverTitle.y = app.screen.height / 2 - 100;
+  overlay.addChild(gameOverTitle);
+
+  const playAgainBtn = new Text({
+    text: "▶ Play Again",
+    style: { fill: "#00ff00", fontSize: 36 },
+  });
+  playAgainBtn.anchor.set(0.5);
+  playAgainBtn.x = app.screen.width / 2;
+  playAgainBtn.y = app.screen.height / 2;
+  playAgainBtn.eventMode = "static";
+  playAgainBtn.cursor = "pointer";
+  overlay.addChild(playAgainBtn);
+
+  const mainMenuBtn = new Text({
+    text: "🏠 Main Menu",
+    style: { fill: "#ffaa00", fontSize: 36 },
+  });
+  mainMenuBtn.anchor.set(0.5);
+  mainMenuBtn.x = app.screen.width / 2;
+  mainMenuBtn.y = app.screen.height / 2 + 60;
+  mainMenuBtn.eventMode = "static";
+  mainMenuBtn.cursor = "pointer";
+  overlay.addChild(mainMenuBtn);
+
+  playAgainBtn.on("pointerdown", () => {
+    app.stage.removeChild(overlay);
+    onPlayAgain();
   });
 
   mainMenuBtn.on("pointerdown", () => resetToMainMenu(app));
