@@ -8,15 +8,17 @@ export interface GameState {
   gameOver: boolean;
 }
 
+const FPS = 60;
 const PLAYER_WIDTH = 60;
 const PLAYER_HEIGHT = 20;
 const PLAYER_Y_OFFSET = 10;
-const PLAYER_SPEED_PPS = 300; // 5 pixels/frame * 60 fps = 300
-const BLOCK_SPEED_PPS = 180; // 3 pixels/frame * 60 fps = 180
+const PLERY_SPEED_PIXELS_PER_FRAME = 5;
+const BLOCK_SPEED_PIXELS_PER_FRAME = 3;
 const BLOCK_SIZE = 30;
 const BLOCKS_PER_SECOND = 2;
-const SPAWN_INTERVAL_SECONDS = 1 / BLOCKS_PER_SECOND;
 
+const PLAYER_SPEED_PPS = PLERY_SPEED_PIXELS_PER_FRAME * FPS;
+const BLOCK_SPEED_PPS = BLOCK_SPEED_PIXELS_PER_FRAME * FPS;
 export class DodgerCore {
   private width: number;
   private height: number;
@@ -27,14 +29,21 @@ export class DodgerCore {
   private score = 0;
   private gameOver = false;
   private startTime = 0;
-  private timeUntilNextBlock: number = SPAWN_INTERVAL_SECONDS;
+  private blocksPerSecond: number;
+  private timeUntilNextBlock: number;
 
-  constructor(width: number, height: number) {
+  constructor(
+    width: number,
+    height: number,
+    blocksPerSecond = BLOCKS_PER_SECOND
+  ) {
     this.width = width;
     this.height = height;
     this.playerX = width / 2 - PLAYER_WIDTH / 2;
     this.playerY = height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
     this.startTime = Date.now();
+    this.blocksPerSecond = blocksPerSecond;
+    this.timeUntilNextBlock = 1 / this.blocksPerSecond;
   }
 
   public step(action: Action, dt: number): GameState {
@@ -60,7 +69,7 @@ export class DodgerCore {
     if (this.timeUntilNextBlock <= 0) {
       this.spawnBlock();
       // Add the interval back, accounting for any overshoot
-      this.timeUntilNextBlock += SPAWN_INTERVAL_SECONDS;
+      this.timeUntilNextBlock += 1 / this.blocksPerSecond;
     }
 
     this.moveBlocks(dt);
@@ -70,8 +79,23 @@ export class DodgerCore {
   }
 
   private spawnBlock() {
-    const x = Math.random() * (this.width - BLOCK_SIZE);
-    this.blocks.push({ x, y: -BLOCK_SIZE });
+    const spawnY = -BLOCK_SIZE;
+    const spawnRangeY = BLOCK_SIZE * 3;
+    const maxAttempts = 50;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      const x = Math.random() * (this.width - BLOCK_SIZE);
+
+      if (!this.isOverlappingWithBlocks(x, spawnY, spawnRangeY)) {
+        this.blocks.push({ x, y: spawnY });
+        return;
+      }
+    }
+
+    this.blocks.push({
+      x: Math.random() * (this.width - BLOCK_SIZE),
+      y: spawnY,
+    });
   }
 
   private moveBlocks(dt: number) {
@@ -98,6 +122,17 @@ export class DodgerCore {
     );
   }
 
+  private isOverlappingWithBlocks(
+    x: number,
+    y: number,
+    rangeY: number
+  ): boolean {
+    return this.blocks.some((block) => {
+      if (Math.abs(block.y - y) > rangeY) return false;
+      return !(x + BLOCK_SIZE < block.x || x > block.x + BLOCK_SIZE);
+    });
+  }
+
   private reset() {
     this.blocks = [];
     this.score = 0;
@@ -105,7 +140,7 @@ export class DodgerCore {
     this.startTime = Date.now();
     this.playerX = this.width / 2 - PLAYER_WIDTH / 2;
     this.playerY = this.height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
-    this.timeUntilNextBlock = SPAWN_INTERVAL_SECONDS;
+    this.timeUntilNextBlock = 1 / this.blocksPerSecond;
   }
 
   public getState(): GameState {
