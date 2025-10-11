@@ -27,3 +27,6 @@ dist-ssr
 /ai-training/dodger-ai
 /ai-training/ppo_dodger_tensorboard
 *__pycache__/
+
+# Keys
+/keys/
