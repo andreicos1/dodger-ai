@@ -2,11 +2,7 @@ from core.dodger_env_gym_core import DodgerEnvGym
 import websockets
 import json
 import numpy as np
-
-MIN_WIDTH = 360
-MAX_WIDTH = 2400
-MIN_HEIGHT = 500
-MAX_HEIGHT = 1200
+from core.dodger_env_gym_core import MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT
 
 
 class DodgerEnvGymTrain(DodgerEnvGym):
@@ -79,7 +75,7 @@ class DodgerEnvGymTrain(DodgerEnvGym):
                 reward = 2.0  # Reward for the specific action of dodging!
 
             if not self.was_threatened and is_currently_threatened:
-                reward = -1.5  # Penalty for entering the danger zone
+                reward = -1.0  # Penalty for entering the danger zone
 
             # Update the state for the next frame
             self.was_threatened = is_currently_threatened
@@ -110,8 +106,8 @@ class DodgerEnvGymTrain(DodgerEnvGym):
             if data["type"] == "state":
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
-                # reward = self._get_reward()
-                reward = self._get_reward_curriculum_adjustment()
+                reward = self._get_reward()
+                # reward = self._get_reward_curriculum_adjustment()
 
                 return (
                     self._process_state(self.state),
