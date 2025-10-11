@@ -83,13 +83,13 @@ export async function startVisualizer(app: Application) {
   const initialObs = processState(game.getState(), width, height);
   obsStack = [initialObs, initialObs, initialObs, initialObs];
 
-  let isRunning = true;
+  let isPaused = false;
   let isProcessing = false;
 
   app.ticker.maxFPS = 60;
 
   const tickerFn = async () => {
-    if (!isRunning || isProcessing) return;
+    if (isPaused || isProcessing) return;
     isProcessing = true;
 
     const stacked = new Float32Array(124);
@@ -119,8 +119,17 @@ export async function startVisualizer(app: Application) {
 
   app.ticker.add(tickerFn);
 
-  return () => {
-    isRunning = false;
-    app.ticker.remove(tickerFn);
+  return {
+    cleanup: () => {
+      app.ticker.remove(tickerFn);
+    },
+    pause: () => {
+      isPaused = true;
+      game.pause();
+    },
+    resume: () => {
+      isPaused = false;
+      game.resume();
+    },
   };
 }

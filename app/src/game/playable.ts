@@ -69,7 +69,11 @@ export function startPlayable(app: Application) {
   const keys = setupKeyboard();
   const touch = setupTouch(app.screen.width);
 
+  let isPaused = false;
+
   const update = (ticker: Ticker) => {
+    if (isPaused) return;
+
     const dt = ticker.deltaMS / 1000;
 
     let action: Action = "NONE";
@@ -85,7 +89,17 @@ export function startPlayable(app: Application) {
 
   app.ticker.add(update);
 
-  return () => {
-    app.ticker.remove(update);
+  return {
+    cleanup: () => {
+      app.ticker.remove(update);
+    },
+    pause: () => {
+      isPaused = true;
+      core.pause();
+    },
+    resume: () => {
+      isPaused = false;
+      core.resume();
+    },
   };
 }

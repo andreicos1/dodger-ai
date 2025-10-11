@@ -33,6 +33,9 @@ export class DodgerCore {
   private score = 0;
   private gameOver = false;
   private startTime = 0;
+  private pausedTime = 0;
+  private lastPauseTime = 0;
+  private isPaused = false;
   private blocksPerSecond: number;
   private timeUntilNextBlock: number;
 
@@ -68,14 +71,14 @@ export class DodgerCore {
     this.timeUntilNextBlock -= dt;
     if (this.timeUntilNextBlock <= 0) {
       this.spawnBlock();
-      // Add the interval back, accounting for any overshoot
       this.timeUntilNextBlock += 1 / this.blocksPerSecond;
     }
 
     this.moveBlocks(dt);
 
     const now = Date.now();
-    this.score = Math.floor((now - this.startTime) / 1000);
+    const elapsed = now - this.startTime - this.pausedTime;
+    this.score = Math.floor(elapsed / 1000);
   }
 
   private spawnBlock() {
@@ -138,9 +141,26 @@ export class DodgerCore {
     this.score = 0;
     this.gameOver = false;
     this.startTime = Date.now();
+    this.pausedTime = 0;
+    this.lastPauseTime = 0;
+    this.isPaused = false;
     this.playerX = this.width / 2 - PLAYER_WIDTH / 2;
     this.playerY = this.height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
     this.timeUntilNextBlock = 1 / this.blocksPerSecond;
+  }
+
+  public pause() {
+    if (!this.isPaused) {
+      this.isPaused = true;
+      this.lastPauseTime = Date.now();
+    }
+  }
+
+  public resume() {
+    if (this.isPaused) {
+      this.isPaused = false;
+      this.pausedTime += Date.now() - this.lastPauseTime;
+    }
   }
 
   public getState(): GameState {

@@ -53,7 +53,12 @@ function createExitButton(app: Application) {
   return exitBtn;
 }
 
-let cleanupCurrentMode: (() => void) | null = null;
+let currentMode: {
+  cleanup: () => void;
+  pause: () => void;
+  resume: () => void;
+} | null = null;
+
 function createMenu(app: Application) {
   const menuContainer = new Container();
 
@@ -65,13 +70,13 @@ function createMenu(app: Application) {
 
   playBtn.on("pointerdown", () => {
     app.stage.removeChild(menuContainer);
-    cleanupCurrentMode = startPlayable(app);
+    currentMode = startPlayable(app);
     addExitButton(app);
   });
 
   aiBtn.on("pointerdown", async () => {
     app.stage.removeChild(menuContainer);
-    cleanupCurrentMode = await startVisualizer(app);
+    currentMode = await startVisualizer(app);
     addExitButton(app);
   });
 
@@ -79,9 +84,9 @@ function createMenu(app: Application) {
 }
 
 function resetToMainMenu(app: Application) {
-  if (cleanupCurrentMode) {
-    cleanupCurrentMode(); // stop ticker + destroy objects
-    cleanupCurrentMode = null;
+  if (currentMode) {
+    currentMode.cleanup();
+    currentMode = null;
   }
 
   app.stage.removeChildren().forEach((c) => c.destroy());
@@ -98,13 +103,11 @@ function resetToMainMenu(app: Application) {
 function createPauseMenu(app: Application) {
   const overlay = new Container();
 
-  // Semi-transparent background
   const bg = new Graphics()
     .rect(0, 0, app.screen.width, app.screen.height)
     .fill({ color: 0x000000, alpha: 0.6 });
   overlay.addChild(bg);
 
-  // Resume button
   const resumeBtn = new Text({
     text: "▶ Resume",
     style: { fill: "#00ff00", fontSize: 36 },
@@ -116,7 +119,6 @@ function createPauseMenu(app: Application) {
   resumeBtn.cursor = "pointer";
   overlay.addChild(resumeBtn);
 
-  // Main Menu button
   const mainMenuBtn = new Text({
     text: "🏠 Main Menu",
     style: { fill: "#ffaa00", fontSize: 36 },
@@ -129,6 +131,7 @@ function createPauseMenu(app: Application) {
   overlay.addChild(mainMenuBtn);
 
   resumeBtn.on("pointerdown", () => {
+    if (currentMode) currentMode.resume();
     app.stage.removeChild(overlay);
   });
 
@@ -138,6 +141,7 @@ function createPauseMenu(app: Application) {
 }
 
 function onExitButtonClick(app: Application) {
+  if (currentMode) currentMode.pause();
   const pauseMenu = createPauseMenu(app);
   app.stage.addChild(pauseMenu);
 }
