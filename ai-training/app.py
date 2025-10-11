@@ -47,7 +47,8 @@ async def websocket_run(websocket: WebSocket):
             obs_stack.append(obs)
 
             if done:
-                print("Episode finished. Resetting...")
+                print(
+                    f"Episode finished. Score = {data['state'].get('score', 0)} Resetting...")
                 await websocket.send_json({"type": "restart"})
                 data = await websocket.receive_json()
                 obs = env._process_state(data["state"])
