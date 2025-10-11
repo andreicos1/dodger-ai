@@ -16,7 +16,15 @@ app = FastAPI()
 @app.websocket("/ws/run")
 async def websocket_run(websocket: WebSocket):
     await websocket.accept()
-    env = DodgerEnvGymEval()
+    init_data = await websocket.receive_json()
+    width = 800
+    height = 600
+    if isinstance(init_data, dict) and init_data.get("type") == "init":
+        width = int(init_data.get("width", 800))
+        height = int(init_data.get("height", 600))
+    else:
+        print(f"Warning: Expected init message, got: {init_data}")
+    env = DodgerEnvGymEval(width=width, height=height)
 
     try:
         await websocket.send_json({"type": "restart"})
