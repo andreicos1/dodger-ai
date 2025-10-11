@@ -1,8 +1,8 @@
 import { DodgerCore, Action } from "../../shared/core";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 
-const WIDTH = 800;
-const HEIGHT = 600;
+const DEFAULT_WIDTH = 800;
+const DEFAULT_HEIGHT = 600;
 
 const LOGICAL_FRAME_RATE = 60;
 const FIXED_DT = 1 / LOGICAL_FRAME_RATE;
@@ -15,13 +15,10 @@ console.log(
   )}s (${LOGICAL_FRAME_RATE} FPS)`
 );
 
-const games = new Map<WebSocket, DodgerCore>();
-
 wss.on("connection", (ws) => {
   console.log("Client connected");
 
-  let game = new DodgerCore(WIDTH, HEIGHT);
-  games.set(ws, game);
+  let game = new DodgerCore(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
   ws.on("message", (msg) => {
     try {
@@ -31,8 +28,9 @@ wss.on("connection", (ws) => {
         const state = game.step(data.action as Action, FIXED_DT);
         ws.send(JSON.stringify({ type: "state", state }));
       } else if (data.type === "restart") {
-        game = new DodgerCore(WIDTH, HEIGHT);
-        games.set(ws, game);
+        const width = data.width || DEFAULT_WIDTH;
+        const height = data.height || DEFAULT_HEIGHT;
+        game = new DodgerCore(width, height);
 
         const state = game.step("RESTART", FIXED_DT);
         ws.send(JSON.stringify({ type: "state", state }));
@@ -46,6 +44,5 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Client disconnected");
-    games.delete(ws);
   });
 });

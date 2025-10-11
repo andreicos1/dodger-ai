@@ -12,13 +12,17 @@ const FPS = 60;
 const PLAYER_WIDTH = 60;
 const PLAYER_HEIGHT = 20;
 const PLAYER_Y_OFFSET = 10;
-const PLERY_SPEED_PIXELS_PER_FRAME = 5;
-const BLOCK_SPEED_PIXELS_PER_FRAME = 3;
+const PLAYER_SPEED_PIXELS_PER_FRAME = 5;
+const BLOCK_SPEED_PIXELS_PER_FRAME = 4;
 const BLOCK_SIZE = 30;
-const BLOCKS_PER_SECOND = 2;
 
-const PLAYER_SPEED_PPS = PLERY_SPEED_PIXELS_PER_FRAME * FPS;
+const PLAYER_SPEED_PPS = PLAYER_SPEED_PIXELS_PER_FRAME * FPS;
 const BLOCK_SPEED_PPS = BLOCK_SPEED_PIXELS_PER_FRAME * FPS;
+
+function calculateBlocksPerSecond(width: number): number {
+  return 2 + Math.max(0, Math.floor((width - 400) / 200));
+}
+
 export class DodgerCore {
   private width: number;
   private height: number;
@@ -32,17 +36,13 @@ export class DodgerCore {
   private blocksPerSecond: number;
   private timeUntilNextBlock: number;
 
-  constructor(
-    width: number,
-    height: number,
-    blocksPerSecond = BLOCKS_PER_SECOND
-  ) {
+  constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.playerX = width / 2 - PLAYER_WIDTH / 2;
     this.playerY = height - PLAYER_HEIGHT - PLAYER_Y_OFFSET;
     this.startTime = Date.now();
-    this.blocksPerSecond = blocksPerSecond;
+    this.blocksPerSecond = calculateBlocksPerSecond(width);
     this.timeUntilNextBlock = 1 / this.blocksPerSecond;
   }
 

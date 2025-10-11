@@ -1,10 +1,19 @@
 from core.dodger_env_gym_core import DodgerEnvGym
 import websockets
 import json
+import numpy as np
+
+MIN_WIDTH = 360
+MAX_WIDTH = 2400
+MIN_HEIGHT = 500
+MAX_HEIGHT = 1200
 
 
 class DodgerEnvGymTrain(DodgerEnvGym):
-    def __init__(self, uri="ws://localhost:8080", *args, **kwargs):
+    def __init__(self, uri="ws://localhost:8080", randomize_dimensions=False, *args, **kwargs):
+        self.randomize_dimensions = randomize_dimensions
+        self.rng = np.random.default_rng()
+
         super().__init__(*args, **kwargs)
         self.uri = uri
         self.ws = None
@@ -17,7 +26,19 @@ class DodgerEnvGymTrain(DodgerEnvGym):
 
     async def _reset_async(self):
         await self._connect()
-        await self.ws.send(json.dumps({"type": "restart"}))
+
+        if self.randomize_dimensions:
+            self.width = self.rng.integers(MIN_WIDTH, MAX_WIDTH)
+            self.height = self.rng.integers(MIN_HEIGHT, MAX_HEIGHT)
+            self.player_y = self.height - self.player_height - self.player_y_offset
+
+        restart_msg = {
+            "type": "restart",
+            "width": int(self.width),
+            "height": int(self.height)
+        }
+        await self.ws.send(json.dumps(restart_msg))
+
         while True:
             msg = await self.ws.recv()
             data = json.loads(msg)

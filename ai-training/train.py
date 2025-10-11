@@ -20,9 +20,8 @@ if __name__ == "__main__":
 
     def make_env():
         def _init():
-            env = DodgerEnvGymTrain()
+            env = DodgerEnvGymTrain(randomize_dimensions=True)
             env = Monitor(env, LOG_DIR)
-            # hard-limit episode length to 30 real-world minutes @60 fps
             env = TimeLimit(env, max_episode_steps=60 * 60 * 30)
             return env
         return _init
