@@ -4,7 +4,7 @@ import { DodgerCore, type Action, type GameState } from "@shared/core";
 
 const LOGICAL_FRAME_RATE = 60;
 const FIXED_DT = 1 / LOGICAL_FRAME_RATE;
-const SERVER_URL = "ws://localhost:8000/ws/run";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 interface GameData {
   type: "step" | "restart";

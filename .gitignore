@@ -28,5 +28,6 @@ dist-ssr
 /ai-training/ppo_dodger_tensorboard
 *__pycache__/
 
-# Keys
+# Keys & envs
 /keys/
+*.env
