@@ -69,9 +69,9 @@ function createMenu(app: Application) {
     addExitButton(app);
   });
 
-  aiBtn.on("pointerdown", () => {
+  aiBtn.on("pointerdown", async () => {
     app.stage.removeChild(menuContainer);
-    startVisualizer(app);
+    cleanupCurrentMode = await startVisualizer(app);
     addExitButton(app);
   });
 
