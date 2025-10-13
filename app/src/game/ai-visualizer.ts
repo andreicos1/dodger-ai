@@ -74,8 +74,8 @@ async function predict(stackedObs: Float32Array): Promise<number> {
 export async function startVisualizer(app: Application) {
   await initModel();
 
-  const width = app.screen.width;
-  const height = app.screen.height;
+  const width = 800;
+  const height = 600;
   const game = new DodgerCore(width, height);
   const render = createRenderObjects(app);
 
