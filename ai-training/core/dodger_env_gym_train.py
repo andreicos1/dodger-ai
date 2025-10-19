@@ -2,7 +2,8 @@ from core.dodger_env_gym_core import DodgerEnvGym
 import websockets
 import json
 import numpy as np
-from core.dodger_env_gym_core import MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT
+from core.dodger_env_gym_core import MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, MAX_BLOCKS, FRAMES_PER_SECOND, DANGER_ZONE_SECONDS, BLOCK_SPEED_PIXELS_PER_FRAME
+import math
 
 
 class DodgerEnvGymTrain(DodgerEnvGym):
@@ -14,7 +15,8 @@ class DodgerEnvGymTrain(DodgerEnvGym):
         self.uri = uri
         self.ws = None
         self.done = False
-        self.was_threatened = False
+        self.previous_state = None
+        self.steps_survived = 0
 
     async def _connect(self):
         if self.ws is None or self.ws.closed:
@@ -43,58 +45,59 @@ class DodgerEnvGymTrain(DodgerEnvGym):
                 self.done = self.state.get("gameOver", False)
                 return self._process_state(self.state)
 
-    def _is_player_threatened(self, state):
-        """Helper function to determine if the player is in immediate danger."""
+    def _get_evasion_reward(self, state):
+        
+        if self.previous_state is None:
+            return 0
         player_x_start = state["playerX"]
         player_x_end = player_x_start + self.player_width
-        # A block is a threat if it's in the bottom 35% of the screen
-        danger_zone_y_threshold = self.height * 0.65
+        # A block is a threat if it's in the bottom 2 seconds of the screen
+        height_danger_zone = FRAMES_PER_SECOND * DANGER_ZONE_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
+        danger_zone_y_threshold = self.height - height_danger_zone
+        threat_change = 0
+        
+        for block in state["blocks"][:MAX_BLOCKS]:
+            if block["y"] < danger_zone_y_threshold:
+                continue
+            block_x_start = block["x"]
+            block_x_end = block_x_start + self.block_size
+            # Check for horizontal overlap (imminent collision path)
+            is_under_block = (
+                player_x_start <= block_x_end and player_x_end >= block_x_start
+            )
+            if not is_under_block:
+                continue
 
-        for block in state["blocks"]:
-            if block["y"] > danger_zone_y_threshold:
-                block_x_start = block["x"]
-                block_x_end = block_x_start + self.block_size
-                # Check for horizontal overlap (imminent collision path)
-                is_under_block = (
-                    player_x_start < block_x_end and player_x_end > block_x_start
-                )
-                if is_under_block:
-                    return True  # At least one block is a direct threat
-        return False
+            y_dist = abs(self.height - block["y"])
+            y_proximity_normalized = 1.0 - (y_dist / (self.height - danger_zone_y_threshold))
+            y_proximity_exp = math.exp(y_proximity_normalized)
+
+            player_movement_direction = 'left' if state["playerX"] < self.previous_state["playerX"] else 'none' if self.previous_state["playerX"] == state["playerX"] else 'right'
+            if player_movement_direction == 'none':
+                threat_change -= y_proximity_exp
+                continue
+
+            box_x_middle = block_x_start + self.block_size / 2
+            player_x_middle = player_x_start + self.player_width / 2
+            player_to_box_relative_position = 'left' if player_x_middle < box_x_middle else 'middle' if player_x_middle == box_x_middle else 'right'
+            if player_to_box_relative_position == player_movement_direction:
+                threat_change += y_proximity_exp
+            else:
+                threat_change -= y_proximity_exp
+
+        return threat_change * 0.1 # Because this is calculated per frame, we need to multiply by 0.1 to get a reasonable value
 
     def _get_reward(self):
-        reward = 0.001  # Default reward for surviving
+        reward = 1e-3 * (self.steps_survived / 1000)
 
         if self.done:
             reward = -5.0  # Penalty for failure.
         else:
-            is_currently_threatened = self._is_player_threatened(self.state)
-
-            # Check for the "successful dodge" event
-            if self.was_threatened and not is_currently_threatened:
-                reward = 2.0  # Reward for the specific action of dodging!
-
-            if not self.was_threatened and is_currently_threatened:
-                reward = -1.0  # Penalty for entering the danger zone
-
-            # Update the state for the next frame
-            self.was_threatened = is_currently_threatened
+            evasion_reward = self._get_evasion_reward(self.state)
+            reward += evasion_reward # Reward / Penalty for evasion
 
         return reward
 
-    def _get_reward_curriculum_adjustment(self):
-        reward = 0.005  # Default reward for surviving
-
-        if self.done:
-            reward = -10.0
-        else:
-            is_currently_threatened = self._is_player_threatened(self.state)
-            if not self.was_threatened and is_currently_threatened:
-                reward = -0.25  # Penalty for entering the danger zone
-
-            self.was_threatened = is_currently_threatened
-
-        return reward
 
     async def _step_async(self, action):
         await self.ws.send(
@@ -107,7 +110,8 @@ class DodgerEnvGymTrain(DodgerEnvGym):
                 self.state = data["state"]
                 self.done = self.state.get("gameOver", False)
                 reward = self._get_reward()
-                # reward = self._get_reward_curriculum_adjustment()
+                self.previous_state = self.state
+                self.steps_survived += 1
 
                 return (
                     self._process_state(self.state),
@@ -125,6 +129,7 @@ class DodgerEnvGymTrain(DodgerEnvGym):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.was_threatened = False
+        self.previous_state = None
+        self.steps_survived = 0
         obs = self.loop.run_until_complete(self._reset_async())
         return obs, {}

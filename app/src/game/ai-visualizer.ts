@@ -3,10 +3,14 @@ import { Application } from "pixi.js";
 import { createRenderObjects, renderState } from "./renderer";
 import { DodgerCore, type Action, type GameState } from "@shared/core";
 
-const N_STACK = 4;
-const MAX_BLOCKS = 10;
+const MAX_BLOCKS = 28;
 const ACTIONS: Action[] = ["LEFT", "RIGHT", "NONE"];
 const FIXED_DT = 1 / 60;
+
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 2400;
+const MIN_HEIGHT = 500;
+const MAX_HEIGHT = 1200;
 
 let session: ort.InferenceSession | null = null;
 
@@ -14,7 +18,7 @@ ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
 
 async function initModel() {
   if (session) return;
-  session = await ort.InferenceSession.create("/dodger_model.onnx");
+  session = await ort.InferenceSession.create("/dodger_model_test.onnx");
   console.log(
     "Model loaded. Inputs:",
     session.inputNames,
@@ -28,10 +32,12 @@ function processState(
   width: number,
   height: number
 ): Float32Array {
-  const obsSize = 1 + 3 * MAX_BLOCKS;
+  const obsSize = 3 + 2 * MAX_BLOCKS;
   const obs = new Float32Array(obsSize);
 
-  obs[0] = state.playerX / (width / 2) - 1.0;
+  obs[0] = state.playerX / MAX_WIDTH;
+  obs[1] = (height - MIN_HEIGHT) / (MAX_HEIGHT - MIN_HEIGHT);
+  obs[2] = (width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH);
 
   const playerY = height - 20 - 10;
   const sortedBlocks = [...state.blocks].sort(
@@ -40,22 +46,20 @@ function processState(
 
   for (let i = 0; i < Math.min(MAX_BLOCKS, sortedBlocks.length); i++) {
     const block = sortedBlocks[i];
-    const dx = (block.x - state.playerX) / width;
-    const dy = (playerY - block.y) / height;
-    const blockXNorm = block.x / (width / 2) - 1.0;
+    const dx = (block.x - state.playerX) / MAX_WIDTH + 0.5;
+    const dy = Math.abs(playerY - block.y) / MAX_HEIGHT;
 
-    obs[1 + 3 * i] = dx;
-    obs[1 + 3 * i + 1] = dy;
-    obs[1 + 3 * i + 2] = blockXNorm;
+    obs[3 + 2 * i] = dx;
+    obs[3 + 2 * i + 1] = dy;
   }
 
   return obs;
 }
 
-async function predict(stackedObs: Float32Array): Promise<number> {
+async function predict(obs: Float32Array): Promise<number> {
   if (!session) throw new Error("Model not loaded");
 
-  const tensor = new ort.Tensor("float32", stackedObs, [1, 124]);
+  const tensor = new ort.Tensor("float32", obs, [1, 59]);
   const feeds = { observation: tensor };
   const results = await session.run(feeds);
 
@@ -65,7 +69,7 @@ async function predict(stackedObs: Float32Array): Promise<number> {
 
   if (logits.some(isNaN)) {
     console.error("NaN detected in logits, returning default action.");
-    return 2; // Default to "NONE" action
+    return 2;
   }
 
   return logits.indexOf(Math.max(...logits));
@@ -74,14 +78,10 @@ async function predict(stackedObs: Float32Array): Promise<number> {
 export async function startVisualizer(app: Application) {
   await initModel();
 
-  const width = 800;
-  const height = 600;
+  const width = app.screen.width;
+  const height = app.screen.height;
   const game = new DodgerCore(width, height);
   const render = createRenderObjects(app);
-
-  let obsStack: Float32Array[] = [];
-  const initialObs = processState(game.getState(), width, height);
-  obsStack = [initialObs, initialObs, initialObs, initialObs];
 
   let isPaused = false;
   let isProcessing = false;
@@ -92,26 +92,18 @@ export async function startVisualizer(app: Application) {
     if (isPaused || isProcessing) return;
     isProcessing = true;
 
-    const stacked = new Float32Array(124);
-    for (let i = 0; i < N_STACK; i++) {
-      stacked.set(obsStack[i], i * 31);
-    }
+    const state = game.getState();
+    const obs = processState(state, width, height);
 
-    const actionIdx = await predict(stacked);
+    const actionIdx = await predict(obs);
     const action = ACTIONS[actionIdx];
 
     game.step(action, FIXED_DT);
-    const state = game.getState();
-    renderState(app, render, state);
+    const newState = game.getState();
+    renderState(app, render, newState);
 
-    const newObs = processState(state, width, height);
-    obsStack.shift();
-    obsStack.push(newObs);
-
-    if (state.gameOver) {
+    if (newState.gameOver) {
       game.step("RESTART", FIXED_DT);
-      const resetObs = processState(game.getState(), width, height);
-      obsStack = [resetObs, resetObs, resetObs, resetObs];
     }
 
     isProcessing = false;

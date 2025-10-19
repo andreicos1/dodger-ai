@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from stable_baselines3 import PPO
 
-model = PPO.load("best_model/best_model.zip", device="cpu")
+model = PPO.load("best_model_new/best_model.zip", device="cpu")
 policy = model.policy
 
 
@@ -21,7 +21,7 @@ class ActionExtractor(torch.nn.Module):
 wrapper = ActionExtractor(policy)
 wrapper.eval()
 
-dummy_input = torch.randn(1, 124)
+dummy_input = torch.randn(1, 59)
 
 with torch.no_grad():
     test_output = wrapper(dummy_input)
