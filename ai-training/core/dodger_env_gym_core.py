@@ -10,7 +10,8 @@ DEFAULT_WIDTH = 1200
 DEFAULT_HEIGHT = 800
 FRAMES_PER_SECOND = 60
 HEIGHT_EXPLORATION_SECONDS = 4
-DANGER_ZONE_SECONDS = 2
+DANGER_ZONE_SECONDS = 3
+CRITICAL_ZONE_SECONDS = 0.5
 BLOCK_SPEED_PIXELS_PER_FRAME = 3
 
 MIN_WIDTH = 360
@@ -19,7 +20,8 @@ MIN_HEIGHT = 500
 MAX_HEIGHT = 1200
 
 WIDTH_EXPLORATION_RANGE = 1200
-HEIGHT_EXPLORATION_RANGE = FRAMES_PER_SECOND * HEIGHT_EXPLORATION_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
+HEIGHT_EXPLORATION_RANGE = FRAMES_PER_SECOND * \
+    HEIGHT_EXPLORATION_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
 
 MAX_BLOCKS = 20
 ACTIONS = ["LEFT", "RIGHT", "NONE"]
@@ -66,10 +68,11 @@ class DodgerEnvGym(gym.Env):
         )
         self.loop = asyncio.get_event_loop()
 
-
     def _get_blocks_in_range(self, state):
-        blocks_x_axis = [b for b in state["blocks"] if abs(b["x"] - state["playerX"]) <= WIDTH_EXPLORATION_RANGE]
-        blocks_in_range = [b for b in blocks_x_axis if abs(b["y"] - self.player_y) <= HEIGHT_EXPLORATION_RANGE]
+        blocks_x_axis = [b for b in state["blocks"] if abs(
+            b["x"] - state["playerX"]) <= WIDTH_EXPLORATION_RANGE]
+        blocks_in_range = [b for b in blocks_x_axis if abs(
+            b["y"] - self.player_y) <= HEIGHT_EXPLORATION_RANGE]
         return sorted(blocks_in_range, key=lambda b: abs(b["y"] - self.player_y))
 
     def _process_state(self, state):
@@ -88,7 +91,8 @@ class DodgerEnvGym(gym.Env):
 
         for i, block in enumerate(blocks[: self.max_blocks]):
             # Absolute distance normalized to [0, 1]
-            dx = (block["x"] - state["playerX"]) / WIDTH_EXPLORATION_RANGE + 0.5
+            dx = (block["x"] - state["playerX"]) / \
+                WIDTH_EXPLORATION_RANGE + 0.5
             dy = abs(self.player_y - block["y"]) / HEIGHT_EXPLORATION_RANGE
 
             obs[CONSTANT_OBS_SIZE + PER_BLOCK_OBS_SIZE * i] = dx

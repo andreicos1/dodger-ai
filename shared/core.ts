@@ -20,7 +20,7 @@ const PLAYER_SPEED_PPS = PLAYER_SPEED_PIXELS_PER_FRAME * FPS;
 const BLOCK_SPEED_PPS = BLOCK_SPEED_PIXELS_PER_FRAME * FPS;
 
 function calculateBlocksPerSecond(width: number): number {
-  return 2 + Math.max(0, Math.floor((width - 400) / 200));
+  return 2 + Math.max(0, Math.floor((width - 400) / 400));
 }
 
 export class DodgerCore {

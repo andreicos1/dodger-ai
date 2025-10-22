@@ -2,7 +2,7 @@ from core.dodger_env_gym_core import DodgerEnvGym
 import websockets
 import json
 import numpy as np
-from core.dodger_env_gym_core import MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, MAX_BLOCKS, FRAMES_PER_SECOND, DANGER_ZONE_SECONDS, BLOCK_SPEED_PIXELS_PER_FRAME
+from core.dodger_env_gym_core import MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, MAX_BLOCKS, FRAMES_PER_SECOND, DANGER_ZONE_SECONDS, BLOCK_SPEED_PIXELS_PER_FRAME, CRITICAL_ZONE_SECONDS
 import math
 
 
@@ -46,58 +46,84 @@ class DodgerEnvGymTrain(DodgerEnvGym):
                 return self._process_state(self.state)
 
     def _get_evasion_reward(self, state):
-        
+
         if self.previous_state is None:
             return 0
         player_x_start = state["playerX"]
         player_x_end = player_x_start + self.player_width
-        # A block is a threat if it's in the bottom 2 seconds of the screen
-        height_danger_zone = FRAMES_PER_SECOND * DANGER_ZONE_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
+
+        height_danger_zone = FRAMES_PER_SECOND * \
+            DANGER_ZONE_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
         danger_zone_y_threshold = self.height - height_danger_zone
-        threat_change = 0
-        
+
+        height_critical_zone = FRAMES_PER_SECOND * \
+            CRITICAL_ZONE_SECONDS * BLOCK_SPEED_PIXELS_PER_FRAME
+        critical_zone_y_threshold = self.height - height_critical_zone
+
+        closest_block_y = None
         for block in state["blocks"][:MAX_BLOCKS]:
             if block["y"] < danger_zone_y_threshold:
                 continue
             block_x_start = block["x"]
             block_x_end = block_x_start + self.block_size
-            # Check for horizontal overlap (imminent collision path)
+            is_under_block = (
+                player_x_start <= block_x_end and player_x_end >= block_x_start
+            )
+            if is_under_block:
+                if closest_block_y is None or block["y"] > closest_block_y:
+                    closest_block_y = block["y"]
+
+        threat_change = 0
+
+        for block in state["blocks"][:MAX_BLOCKS]:
+            if block["y"] < danger_zone_y_threshold:
+                continue
+            block_x_start = block["x"]
+            block_x_end = block_x_start + self.block_size
             is_under_block = (
                 player_x_start <= block_x_end and player_x_end >= block_x_start
             )
             if not is_under_block:
                 continue
 
-            y_dist = abs(self.height - block["y"])
-            y_proximity_normalized = 1.0 - (y_dist / (self.height - danger_zone_y_threshold))
+            if block["y"] >= critical_zone_y_threshold:
+                y_proximity_normalized = 1.0
+            else:
+                zone_range = critical_zone_y_threshold - danger_zone_y_threshold
+                y_proximity_normalized = (
+                    block["y"] - danger_zone_y_threshold) / zone_range
+
             y_proximity_exp = math.exp(y_proximity_normalized)
 
-            player_movement_direction = 'left' if state["playerX"] < self.previous_state["playerX"] else 'none' if self.previous_state["playerX"] == state["playerX"] else 'right'
+            multiplier = 2 if block["y"] == closest_block_y else 1
+
+            player_movement_direction = 'left' if state["playerX"] < self.previous_state[
+                "playerX"] else 'none' if self.previous_state["playerX"] == state["playerX"] else 'right'
             if player_movement_direction == 'none':
-                threat_change -= y_proximity_exp
+                threat_change -= y_proximity_exp * multiplier
                 continue
 
             box_x_middle = block_x_start + self.block_size / 2
             player_x_middle = player_x_start + self.player_width / 2
             player_to_box_relative_position = 'left' if player_x_middle < box_x_middle else 'middle' if player_x_middle == box_x_middle else 'right'
             if player_to_box_relative_position == player_movement_direction:
-                threat_change += y_proximity_exp
+                threat_change += y_proximity_exp * multiplier
             else:
-                threat_change -= y_proximity_exp
+                threat_change -= y_proximity_exp * multiplier
 
-        return threat_change * 0.1 # Because this is calculated per frame, we need to multiply by 0.1 to get a reasonable value
+        # Because this is calculated per frame, we need to multiply by 0.1 to get a reasonable value
+        return threat_change * 0.1
 
     def _get_reward(self):
-        reward = 1e-3 * (self.steps_survived / 1000)
+        reward = 0.05 * (self.steps_survived / 1000)
 
         if self.done:
-            reward = -5.0  # Penalty for failure.
+            reward = -4.0  # Penalty for failure.
         else:
             evasion_reward = self._get_evasion_reward(self.state)
-            reward += evasion_reward # Reward / Penalty for evasion
+            reward += evasion_reward  # Reward / Penalty for evasion
 
         return reward
-
 
     async def _step_async(self, action):
         await self.ws.send(

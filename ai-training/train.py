@@ -26,15 +26,15 @@ if __name__ == "__main__":
     eval_env = SubprocVecEnv([make_env()])
 
     if TRAIN_FROM_SCRATCH:
-        policy_kwargs = dict(net_arch=[256, 256])
+        policy_kwargs = dict(net_arch=[256, 128])
         model = PPO(
             "MlpPolicy",
             train_env,
             learning_rate=3e-4,
-            n_steps=2048,
-            batch_size=512,
+            n_steps=4096,
+            batch_size=216,
             clip_range=0.25,
-            ent_coef=0.04,
+            ent_coef=0.02,
             vf_coef=0.3,
             n_epochs=15,
             gamma=0.99,
